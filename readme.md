@@ -11,7 +11,7 @@ Zen's context menus pop in fully formed, and with Mica on, the empty backdrop sh
 - The whole menu rolls out, Mica backdrop included, not just the contents.
 - No blank flash and no empty strip at the growing edge, even on large menus.
 - Respects the Windows "reduce motion" setting.
-- Sizes menu items a little roomier, closer to a Windows 11 flyout than Firefox's default.
+- Sets menu text a little larger, closer to a Windows 11 flyout than Firefox's default.
 
 ## Installing with Sine
 
@@ -75,13 +75,11 @@ Roll speed, at the top of `flyout-menus.uc.js`:
 let duration = 250;
 ```
 
-Menu item text size and spacing, at the top of `chrome.css`:
+Menu text size, at the top of `chrome.css`:
 
 ```css
 :root {
   --flyout-menu-font-size: 10.5pt;
-  --flyout-menu-padding: 0.5rem 1rem;
-  --flyout-menu-hover-duration: 250ms;
 }
 ```
 

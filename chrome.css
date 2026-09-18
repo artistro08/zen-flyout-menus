@@ -3,25 +3,22 @@
  * Author: Devin Green (Artistro08)
  *
  * The animation lives entirely in flyout-menus.uc.js. Menus keep Zen's stock
- * look, including the Mica backdrop. The rules here only size menu items, so
- * they read closer to a Windows 11 flyout than Firefox's tighter default.
+ * look, including the Mica backdrop. The only styling here is menu text size,
+ * which reads closer to a Windows 11 flyout than Firefox's smaller default.
+ *
+ * Item spacing is not set here on purpose: Firefox's own menu rules win over a
+ * mod stylesheet, so a padding rule would do nothing. The one knob that does
+ * work is --menuitem-padding-extra, which widens the gap between an item's icon
+ * and its label.
  */
 
 /* Tokens */
 :root {
   --flyout-menu-font-size: 10.5pt;
-  --flyout-menu-padding: 0.5rem 1rem;
-  --flyout-menu-hover-duration: 250ms;
 }
 
 /* Menu Items */
 #mainPopupSet menuitem,
 #mainPopupSet menu {
   font-size: var(--flyout-menu-font-size) !important;
-}
-
-menuitem,
-menu {
-  padding: var(--flyout-menu-padding) !important;
-  transition: all var(--flyout-menu-hover-duration) ease;
 }

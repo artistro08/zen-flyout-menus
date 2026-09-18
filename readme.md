@@ -44,7 +44,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "enabled": true
 }
 ```
@@ -56,7 +56,7 @@ artistro08/zen-flyout-menus
 1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so nothing shows yet.
 2. The script waits until Firefox has shown, sized and painted the real menu at full size, still hidden.
 3. A stand-in window with the same Mica backdrop shows a live copy of the menu (a DWM thumbnail, the same thing taskbar previews use). Windows draws the copy itself, so Firefox renders nothing during the roll and there's never an empty strip. The stand-in grows each frame and shows the matching slice of the menu. It lets clicks through to the real menu, so clicking mid-roll still works.
-4. When the roll ends, the real menu is uncloaked in exactly the same spot and the stand-in is removed.
+4. The stand-in stays up for as long as the menu is open, following the real menu if it changes size, and the real menu stays hidden underneath. Handing back to the real menu would mean switching its backdrop back on, and Windows shows a flat backdrop while it rebuilds the blur. When the menu closes, the stand-in is removed and the real menu is put back to normal once Firefox has hidden it.
 
 > Why not just resize Firefox's menu window? Windows shows the bigger window before Firefox has drawn the new part, which leaves a blank strip at the growing edge on larger menus.
 

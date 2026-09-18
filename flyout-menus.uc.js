@@ -432,9 +432,11 @@
             }
         }
 
-        // Swap in the real menu. It is uncloaked first, identical and in the same
-        // spot, and the stand-in is removed a couple of frames later so there is
-        // never a frame with neither.
+        // The stand-in stays up for as long as the menu is open. Handing back to the
+        // real menu would mean switching its backdrop back on, and Windows shows a
+        // flat backdrop for a couple of frames while it rebuilds the blur. The real
+        // menu stays hidden underneath: the copy is live (hover, submenu arrows,
+        // scrolling) and clicks pass through the stand-in to it.
         function finish() {
             if (finished) {
                 return;
@@ -448,9 +450,22 @@
             }
 
             show(rect.height);
-            restoreMenuBackdrop(stand_in);
-            cloak(hwnd, false);
-            requestAnimationFrame(() => requestAnimationFrame(() => destroyStandIn(stand_in)));
+            nextFrame(popup, generation, follow);
+        }
+
+        // Keep the stand-in on top of the real menu if Firefox resizes or moves it
+        function follow() {
+            if (!isOpen(popup) || !IsWindow(hwnd)) {
+                return;
+            }
+
+            let now = windowRect(hwnd);
+            if (now.left !== rect.left || now.top !== rect.top || now.width !== rect.width || now.height !== rect.height) {
+                rect = now;
+                placeStandIn(stand_in, rect.left, rect.top, rect.width, rect.height, 0);
+            }
+
+            nextFrame(popup, generation, follow);
         }
 
         function step(now) {
@@ -474,6 +489,7 @@
         }
 
         popup._zenFlyoutAnimating = { finish };
+        popup._zenFlyoutStandIn   = stand_in;
         nextFrame(popup, generation, step);
     }
 
@@ -524,24 +540,57 @@
             popup._zenFlyoutAnimating.finish();
         }
 
+        if (popup._zenFlyoutStandIn) {
+            destroyStandIn(popup._zenFlyoutStandIn);
+            popup._zenFlyoutStandIn = null;
+        }
+
         releaseOthers(popup, null);
 
-        let hwnd = windows.get(popup);
-        if (hwnd && isOurPopupWindow(hwnd)) {
+        // Firefox hides the menu's window a moment after this event. Uncloaking
+        // before then would flash the empty menu for a frame, so wait for it.
+        let hwnd       = windows.get(popup);
+        let generation = popup._zenFlyoutGeneration;
+        let frames     = 0;
+
+        function uncloakOnceHidden() {
+            if (!hwnd || !isOurPopupWindow(hwnd) || popup._zenFlyoutGeneration !== generation) {
+                return;
+            }
+            if (IsWindowVisible(hwnd) && frames++ < 30) {
+                requestAnimationFrame(uncloakOnceHidden);
+                return;
+            }
             cloak(hwnd, false);
+        }
+
+        uncloakOnceHidden();
+    }
+
+    // Remove The Stand-In As Soon As The Menu Starts Closing
+    function onHiding(event) {
+        let popup = event.target;
+        if (popup.localName === "menupopup" && popup._zenFlyoutStandIn) {
+            destroyStandIn(popup._zenFlyoutStandIn);
+            popup._zenFlyoutStandIn = null;
         }
     }
 
     // Bind to Event Listeners
     root.addEventListener("popupshowing", onShowing, true);
+    root.addEventListener("popuphiding", onHiding, true);
     root.addEventListener("popuphidden", onHidden, true);
 
     // Clean up when Sine disables or uninstalls the mod
     window.addUnloadListener?.(() => {
         root.removeEventListener("popupshowing", onShowing, true);
+        root.removeEventListener("popuphiding", onHiding, true);
         root.removeEventListener("popuphidden", onHidden, true);
         for (let stand_in of Array.from(stand_ins)) {
             destroyStandIn(stand_in);
+            if (IsWindow(stand_in.menu_hwnd)) {
+                cloak(stand_in.menu_hwnd, false);
+            }
         }
         user32.close();
         kernel32.close();

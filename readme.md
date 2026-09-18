@@ -6,8 +6,8 @@ Makes right-click menus and submenus in Zen roll out of nowhere exactly like Win
 
 Zen's context menus pop in fully formed, and with Mica on, the empty backdrop shows a frame or two before the contents. This mod replaces that with the Windows 11 flyout animation:
 
-- The menu's top edge stays put while the contents and backdrop slide down into view, clipped by the final bounds. Measured frame by frame from the Edge context menu: 250ms, `cubic-bezier(0, 0, 0, 1)`.
-- The whole window rolls, not just the contents. The clip is applied to the menu's OS window.
+- The menu's top edge stays put, the menu grows downward, and the contents slide down with its bottom edge. Measured frame by frame from the Edge context menu: 250ms, `cubic-bezier(0, 0, 0, 1)`.
+- The whole menu rolls out, Mica backdrop included, not just the contents. The script resizes the menu's actual window each frame.
 - No blank flash. The window is hidden from the compositor until its contents are painted.
 - Respects your OS "reduce motion" setting (menus then behave like stock Zen).
 
@@ -27,7 +27,7 @@ artistro08/zen-flyout-menus
 
 3. Click install, then restart Zen once so the script loads. Updates come through Sine when this repo changes.
 
-> The script is required. CSS cannot clip, hide or move a menu's window, and the Mica backdrop lives on that window. The script does that part through js-ctypes and Win32 (`SetWindowRgn`, `DwmSetWindowAttribute`).
+> The script is required. CSS cannot resize or hide a menu's window, and the Mica backdrop is drawn from that window's bounds. The script does that part through js-ctypes and Win32 (`SetWindowPos`, `DwmSetWindowAttribute`).
 
 ## Installing without Sine
 
@@ -43,7 +43,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "enabled": true
 }
 ```
@@ -52,9 +52,11 @@ artistro08/zen-flyout-menus
 
 ## How It Works
 
-1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) and clips it to nothing, so the compositor never shows it empty.
+1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so the compositor never shows it empty. On a cold open, when the window isn't known yet, every hidden popup window is cloaked and the others are released one frame later.
 2. `chrome.css` sets `appearance: none` on menus so Firefox does not apply the Mica backdrop itself. The script applies the backdrop and rounded corners while the window is still cloaked.
-3. After the first paint the window clip grows from the top (`SetWindowRgn`) while the contents translate down, then the clip is removed so Windows draws the normal rounded corners.
+3. The window stays cloaked until its contents have painted once. Then it is shrunk to 1px, uncloaked, and grown back to full height frame by frame (`SetWindowPos`) while the contents translate down.
+
+> Why resize instead of clip? Windows draws the Mica backdrop from the window's full bounds and ignores a clip region, so a clipped window shows a full-size empty backdrop with the contents rolling inside it.
 
 ## Known Limits
 
@@ -67,7 +69,6 @@ At the top of `flyout-menus.uc.js`:
 
 ```js
 let duration = 250;
-let radius   = 8;
 ```
 
 That's it!

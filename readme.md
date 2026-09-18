@@ -26,7 +26,7 @@ artistro08/zen-flyout-menus
 
 3. Click install. Sine downloads `chrome.css` and `flyout-menus.uc.js` and enables the mod. Updates come through Sine when this repo changes.
 
-> The script is required. Firefox keeps a menu's layout alive after it closes, so a CSS-only animation plays once and never again. The script tags each menu while it is open so the animation replays every time.
+> The script is required. Firefox keeps a menu's layout alive after it closes, so a CSS-only animation plays once and never again. The script tags each menu while it is open so the animation replays every time. Restart Zen once after installing so the script loads.
 
 > With Mica popups on (Zen's default), the blurred backdrop appears instantly and only the menu content animates. Set `widget.windows.mica.popups` to `0` in `about:config` if you want the whole menu to move together, at the cost of the Mica look.
 

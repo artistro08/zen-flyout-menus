@@ -4,9 +4,11 @@
  *
  * flyout-menus.uc.js adds [zen-flyout] to a menu while it is open. The
  * animation is keyed off that attribute so it replays on every open.
- * Zen blocks popup animations while Mica popups are on, so the rules below
- * use !important plus a specificity bump (:not(#\#)) to win anyway. With Mica
- * on, the blurred backdrop pops in instantly and only the menu content animates.
+ *
+ * The animation targets the menupopup itself, not ::part(content). Mod
+ * stylesheets are loaded through the stylesheet service, and from there
+ * ::part() never matches. With Mica popups on, the blurred backdrop pops in
+ * instantly and the menu content animates over it.
  */
 
 /* Tokens */
@@ -42,12 +44,12 @@
 /* Menus */
 @media not (prefers-reduced-motion) {
   /* Top-level menus slide down from the click point */
-  menupopup[zen-flyout]:not(#\#):not(.animatable-menupopup)::part(content) {
+  menupopup[zen-flyout]:not(.animatable-menupopup) {
     animation: zen-flyout-down var(--flyout-duration) var(--flyout-easing) both !important;
   }
 
   /* Submenus slide in from the left */
-  menupopup menupopup[zen-flyout]:not(#\#):not(.animatable-menupopup)::part(content) {
+  menupopup menupopup[zen-flyout]:not(.animatable-menupopup) {
     animation-name: zen-flyout-right !important;
   }
 }

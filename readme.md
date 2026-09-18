@@ -1,21 +1,21 @@
 # Flyout Menus
 
-Makes right-click menus and submenus in Zen slide in exactly like Windows 11 tray flyouts.
+Makes right-click menus and submenus in Zen roll out of nowhere exactly like Windows 11 (WinUI) flyouts, Mica backdrop included, with no blank flash on open.
 
 ## Introduction
 
-Zen's context menus appear instantly. This mod moves the whole menu window into place the way Windows does it:
+Zen's context menus pop in fully formed, and with Mica on, the empty backdrop shows a frame or two before the contents. This mod replaces that with the Windows 11 flyout animation:
 
-- Top-level menus slide down 60px into place. Submenus slide in 60px from the left.
-- 330ms with the WinUI decelerate curve, `cubic-bezier(0, 0, 0, 1)`. Measured frame by frame from a recording of the Windows 11 tray menu.
-- The whole window moves, Mica backdrop included, because the script moves the OS window itself instead of animating CSS inside it.
-- Respects your OS "reduce motion" setting.
+- The menu's top edge stays put while the contents and backdrop slide down into view, clipped by the final bounds. Measured frame by frame from the Edge context menu: 250ms, `cubic-bezier(0, 0, 0, 1)`.
+- The whole window rolls, not just the contents. The clip is applied to the menu's OS window.
+- No blank flash. The window is hidden from the compositor until its contents are painted.
+- Respects your OS "reduce motion" setting (menus then behave like stock Zen).
 
 ## Installing with Sine
 
 ### Prerequisites
 
-- Zen Browser on Windows
+- Zen Browser on Windows 11
 - [Sine](https://github.com/CosmoCreeper/Sine) installed
 
 1. Open Zen settings and go to the Sine page.
@@ -27,7 +27,7 @@ artistro08/zen-flyout-menus
 
 3. Click install, then restart Zen once so the script loads. Updates come through Sine when this repo changes.
 
-> The script is required. CSS cannot move a menu's window, and the Mica backdrop lives on that window, so the script slides the window itself.
+> The script is required. CSS cannot clip, hide or move a menu's window, and the Mica backdrop lives on that window. The script does that part through js-ctypes and Win32 (`SetWindowRgn`, `DwmSetWindowAttribute`).
 
 ## Installing without Sine
 
@@ -38,31 +38,36 @@ artistro08/zen-flyout-menus
 "7c2f1b3e-5a9d-4e61-9f0b-2d8c4a6e1b57": {
   "id": "7c2f1b3e-5a9d-4e61-9f0b-2d8c4a6e1b57",
   "name": "Flyout Menus",
-  "description": "Right-click menus and submenus slide in like Windows 11 flyouts.",
+  "description": "Right-click menus roll out like Windows 11 flyouts.",
   "homepage": "https://github.com/artistro08/zen-flyout-menus",
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "enabled": true
 }
 ```
 
 3. Zen Mods only load the CSS, so you also need [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) or Sine to run `flyout-menus.uc.js`.
 
-## The Blank Flash On Open
+## How It Works
 
-With Mica popups on (Zen's default), Firefox shows the Mica window one or two frames before it paints the menu contents. That is Firefox behavior, not this mod, and it cannot be hidden: turning Mica on late blanks the window for a frame or two just the same.
+1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) and clips it to nothing, so the compositor never shows it empty.
+2. `chrome.css` sets `appearance: none` on menus so Firefox does not apply the Mica backdrop itself. The script applies the backdrop and rounded corners while the window is still cloaked.
+3. After the first paint the window clip grows from the top (`SetWindowRgn`) while the contents translate down, then the clip is removed so Windows draws the normal rounded corners.
 
-If the flash bothers you more than the blur helps, open `about:config` and set `widget.windows.mica.popups` to `0`. Menus then draw with a normal translucent background, appear with their contents already painted, and still slide.
+## Known Limits
+
+- Windows only. On other platforms the script does nothing.
+- Menus that flip upward because they are near the bottom of the screen still roll downward from their top edge.
 
 ## Tweaking
 
-Slide distance and speed live at the top of `flyout-menus.uc.js`:
+At the top of `flyout-menus.uc.js`:
 
 ```js
-let duration = 330;
-let offset   = 60;
+let duration = 250;
+let radius   = 8;
 ```
 
 That's it!

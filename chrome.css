@@ -1,9 +1,16 @@
 /* Zen Flyout Menus
- * WinUI-style flyout animation for right-click menus and submenus.
+ * WinUI-style roll-out animation for right-click menus and submenus.
  * Author: Devin Green (Artistro08)
  *
- * All of the motion lives in flyout-menus.uc.js. CSS cannot move a menu's OS
- * window, and the Mica backdrop lives on that window, so there is nothing for
- * a stylesheet to animate here. This file is kept so the mod stays a valid
- * Sine/Zen mod.
+ * All of the motion lives in flyout-menus.uc.js. This rule stops Firefox from
+ * applying the Mica backdrop to menus itself; the script applies it instead,
+ * once the menu is painted, which is what removes the blank flash on open.
+ *
+ * [zen-flyout-ready] on the root means the script is loaded. Without it this
+ * rule stays off and menus keep Zen's stock look.
  */
+
+/* Menus */
+:root[zen-flyout-ready] menupopup {
+  appearance: none !important;
+}

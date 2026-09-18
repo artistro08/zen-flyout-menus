@@ -1,12 +1,12 @@
 {
   "id": "7c2f1b3e-5a9d-4e61-9f0b-2d8c4a6e1b57",
   "name": "Flyout Menus",
-  "description": "Right-click menus and submenus slide in exactly like Windows 11 tray flyouts, Mica backdrop included.",
+  "description": "Right-click menus roll out exactly like Windows 11 flyouts, Mica backdrop included, with no blank flash on open.",
   "homepage": "https://github.com/artistro08/zen-flyout-menus",
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "tags": [
     "context-menu",
     "animation",

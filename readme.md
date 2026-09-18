@@ -44,7 +44,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "4.2.0",
+  "version": "1.0.0",
   "enabled": true
 }
 ```

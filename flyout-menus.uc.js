@@ -1,7 +1,9 @@
 // Flyout Menus
 // Rolls right-click menus out of nowhere the way Windows 11 (WinUI) flyouts
 // do: the menu window's top edge stays put, the window grows downward, and the
-// contents slide down with its bottom edge. 250ms, decelerate curve
+// contents slide down with its bottom edge. Menus that Firefox flips upward
+// (not enough room below the cursor) roll the other way: the bottom edge stays
+// put and the window grows upward. 250ms, decelerate curve
 // cubic-bezier(0, 0, 0, 1), measured frame by frame from the Edge context menu.
 //
 // How it works. Firefox cannot resize or hide a popup's OS window from CSS, and
@@ -14,8 +16,12 @@
 //   2. The script waits until Firefox has shown, sized and painted the window
 //      (still cloaked). Firefox applies the Mica backdrop itself, as in stock Zen.
 //   3. The window is shrunk to 1px, uncloaked, and grown back to full height
-//      frame by frame (SetWindowPos with SWP_NOMOVE, so Firefox keeps full
-//      control of where the menu goes) while the contents translate down.
+//      frame by frame with SetWindowPos. Firefox is never told about these
+//      changes (see quietSetWindowPos), so it keeps painting the menu at full
+//      size and the window simply shows more of it each frame. A downward roll
+//      keeps the top edge and slides the contents down with the bottom edge. An
+//      upward roll keeps the bottom edge and the contents ride the top edge.
+//      Both end exactly where Firefox put the window.
 (function () {
     // Settings
     let duration = 250;
@@ -31,20 +37,31 @@
     let dwmapi     = ctypes.open("dwmapi.dll");
     let HWND       = ctypes.voidptr_t;
     let RECT       = new ctypes.StructType("RECT", [{ left: ctypes.int32_t }, { top: ctypes.int32_t }, { right: ctypes.int32_t }, { bottom: ctypes.int32_t }]);
+    let POINT      = new ctypes.StructType("POINT", [{ x: ctypes.int32_t }, { y: ctypes.int32_t }]);
 
     let FindWindowExW         = user32.declare("FindWindowExW", ctypes.winapi_abi, HWND, HWND, HWND, ctypes.char16_t.ptr, ctypes.char16_t.ptr);
+    let GetCursorPos          = user32.declare("GetCursorPos", ctypes.winapi_abi, ctypes.int32_t, POINT.ptr);
     let GetWindow             = user32.declare("GetWindow", ctypes.winapi_abi, HWND, HWND, ctypes.uint32_t);
     let GetWindowRect         = user32.declare("GetWindowRect", ctypes.winapi_abi, ctypes.int32_t, HWND, RECT.ptr);
     let IsWindow              = user32.declare("IsWindow", ctypes.winapi_abi, ctypes.int32_t, HWND);
     let IsWindowVisible       = user32.declare("IsWindowVisible", ctypes.winapi_abi, ctypes.int32_t, HWND);
     let SetWindowPos          = user32.declare("SetWindowPos", ctypes.winapi_abi, ctypes.int32_t, HWND, HWND, ctypes.int32_t, ctypes.int32_t, ctypes.int32_t, ctypes.int32_t, ctypes.uint32_t);
+    let SetWindowLongPtrW     = user32.declare("SetWindowLongPtrW", ctypes.winapi_abi, ctypes.intptr_t, HWND, ctypes.int32_t, ctypes.intptr_t);
+    let CallWindowProcW       = user32.declare("CallWindowProcW", ctypes.winapi_abi, ctypes.intptr_t, ctypes.intptr_t, HWND, ctypes.uint32_t, ctypes.uintptr_t, ctypes.intptr_t);
     let DwmSetWindowAttribute = dwmapi.declare("DwmSetWindowAttribute", ctypes.winapi_abi, ctypes.int32_t, HWND, ctypes.uint32_t, ctypes.voidptr_t, ctypes.uint32_t);
+    let WNDPROC               = ctypes.FunctionType(ctypes.stdcall_abi, ctypes.intptr_t, [HWND, ctypes.uint32_t, ctypes.uintptr_t, ctypes.intptr_t]);
 
-    let GW_OWNER        = 4;
-    let DWMWA_CLOAK     = 13;
+    let GW_OWNER            = 4;
+    let GWLP_WNDPROC        = -4;
+    let WM_WINDOWPOSCHANGED = 0x0047;
+    let DWMWA_CLOAK         = 13;
     let POPUP_CLASS     = "MozillaDropShadowWindowClass";
     let SWP_RESIZE_ONLY = 0x0002 | 0x0004 | 0x0010 | 0x0100 | 0x0200 | 0x0400; // NOMOVE | NOZORDER | NOACTIVATE | NOCOPYBITS | NOOWNERZORDER | NOSENDCHANGING
+    let SWP_MOVE_RESIZE = 0x0004 | 0x0010 | 0x0100 | 0x0200 | 0x0400;          // same, but the window may move
+    let FLIP_SLACK_CSS  = 24; // how far below the cursor a flipped menu's bottom edge can sit (submenus align to the item's bottom)
     let MAX_WAIT_FRAMES = 12;
+    let COLD_STEADY_FRAMES = 5;  // frames a cold first open must hold its size before rolling
+    let MAX_SETTLE_FRAMES  = 20;
 
     // Elements
     let root      = document.documentElement;
@@ -78,8 +95,50 @@
         return { left: r.left, top: r.top, width: r.right - r.left, height: r.bottom - r.top };
     }
 
+    // Move or resize a menu window without Firefox finding out.
+    // Firefox reacts to a moved menu by growing it back to full size, and to a
+    // shrunk menu by repainting it smaller. Both fight the roll. For the length of
+    // our own SetWindowPos call only, Firefox's window procedure is swapped for a
+    // pass-through that drops WM_WINDOWPOSCHANGED, so Firefox keeps treating the
+    // menu as full size where it put it. That is also where every roll ends.
+    // The swap never outlives the call: script must not run inside Firefox's
+    // window procedure at other times.
+    let firefox_proc = null;
+    let quiet_proc   = WNDPROC.ptr((hwnd, message, wparam, lparam) => {
+        if (message === WM_WINDOWPOSCHANGED) {
+            return 0;
+        }
+        return CallWindowProcW(firefox_proc, hwnd, message, wparam, lparam);
+    });
+    let quiet_value  = ctypes.cast(quiet_proc, ctypes.intptr_t);
+
+    function quietSetWindowPos(hwnd, x, y, width, height, flags) {
+        firefox_proc = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, quiet_value);
+        try {
+            SetWindowPos(hwnd, null, x, y, width, height, flags);
+        } finally {
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, firefox_proc);
+            firefox_proc = null;
+        }
+    }
+
     function resize(hwnd, width, height) {
-        SetWindowPos(hwnd, null, 0, 0, width, Math.max(1, height), SWP_RESIZE_ONLY);
+        quietSetWindowPos(hwnd, 0, 0, width, Math.max(1, height), SWP_RESIZE_ONLY);
+    }
+
+    // Resize while keeping the bottom edge where it is. Returns false if the window
+    // did not end up where asked, so the caller can roll downward instead.
+    function resizeFromBottom(hwnd, left, bottom, width, height) {
+        let h = Math.max(1, height);
+        quietSetWindowPos(hwnd, left, bottom - h, width, h, SWP_MOVE_RESIZE);
+
+        let now = windowSize(hwnd);
+        return Math.abs(now.top - (bottom - h)) <= 1 && now.height === h;
+    }
+
+    function cursorY() {
+        let point = POINT();
+        return GetCursorPos(point.address()) ? point.y : null;
     }
 
     function popupWindows(test) {
@@ -180,8 +239,37 @@
             return;
         }
 
+        // First time this menu uses this window: it may still be filling in
+        let known = windows.get(popup);
+        let cold  = !known || keyOf(known) !== keyOf(hwnd);
+
         windows.set(popup, hwnd);
-        afterPaint(popup, generation, () => rollOut(popup, generation, hwnd));
+        afterPaint(popup, generation, () => waitUntilSettled(popup, generation, hwnd, cold ? COLD_STEADY_FRAMES : 1, null, 0, 0));
+    }
+
+    // Wait For The Menu To Stop Changing Size
+    // On a cold first open a menu can still be filling in items and icons, and
+    // Firefox resizes the window itself when it does. Starting the roll before that
+    // would flash the full menu for a frame, so wait (still cloaked) until layout
+    // and window size hold steady: one repeat for a menu seen before, several on a
+    // cold first open.
+    function waitUntilSettled(popup, generation, hwnd, needed, previous, same, tries) {
+        if (!isOpen(popup)) {
+            cloak(hwnd, false);
+            return;
+        }
+
+        let layout  = layoutSize(popup);
+        let actual  = windowSize(hwnd);
+        let reading = [layout.width, layout.height, actual.width, actual.height].join();
+        let steady  = reading === previous ? same + 1 : 0;
+
+        if (steady >= needed || tries >= MAX_SETTLE_FRAMES) {
+            rollOut(popup, generation, hwnd);
+            return;
+        }
+
+        nextFrame(popup, generation, () => waitUntilSettled(popup, generation, hwnd, needed, reading, steady, tries + 1));
     }
 
     // Roll The Menu Out
@@ -204,6 +292,31 @@
         let revealed = false;
         let last     = { width: actual.width, height: actual.height };
 
+        // Flipped upward: Firefox put the menu's bottom edge at the cursor instead of its top edge
+        let click_y  = popup._zenFlyoutCursorY;
+        let bottom   = actual.top + actual.height;
+        let upward   = click_y !== null && click_y !== undefined && actual.top < click_y && bottom <= click_y + FLIP_SLACK_CSS * window.devicePixelRatio;
+
+        function place(width, height) {
+            if (upward && !resizeFromBottom(hwnd, actual.left, bottom, width, height)) {
+                // Firefox pinned it to its anchor, so roll downward from there instead
+                upward = false;
+            }
+
+            if (!upward) {
+                resize(hwnd, width, height);
+            }
+        }
+
+        // Downward: the contents' bottom edge rides the window's bottom edge.
+        // Upward: the contents' top edge rides the window's top edge, which is where
+        // Firefox draws them anyway, so they need no offset.
+        function slide(eased, height_css) {
+            if (inner && !upward) {
+                inner.style.translate = "0 " + ((eased - 1) * height_css) + "px";
+            }
+        }
+
         function reveal() {
             if (!revealed) {
                 revealed = true;
@@ -220,7 +333,7 @@
         // A closed menu has no layout size, so fall back to the last size seen while open
         function finish() {
             let full = isOpen(popup) ? target() : last;
-            resize(hwnd, full.width, full.height);
+            place(full.width, full.height);
             reveal();
             if (inner) {
                 inner.style.translate = "";
@@ -243,7 +356,7 @@
             let now  = windowSize(hwnd);
 
             if (Math.abs(now.width - full.width) > 1 || Math.abs(now.height - full.height) > 1) {
-                resize(hwnd, full.width, full.height);
+                place(full.width, full.height);
             }
 
             if (frames_left > 0) {
@@ -261,7 +374,7 @@
             }
 
             // Uncloak at the size that has already painted, and hold it for this frame.
-            // Growing in the same frame would show an unpainted strip at the bottom edge.
+            // Growing in the same frame would show an unpainted strip at the leading edge.
             if (!revealed && shown_h > 1) {
                 reveal();
                 nextFrame(popup, generation, step);
@@ -275,12 +388,9 @@
 
             last = full;
 
-            resize(hwnd, full.width, h);
+            place(full.width, h);
             shown_h = h;
-
-            if (inner) {
-                inner.style.translate = "0 " + ((eased - 1) * full.height_css) + "px";
-            }
+            slide(eased, full.height_css);
 
             if (progress < 1) {
                 nextFrame(popup, generation, step);
@@ -291,10 +401,8 @@
 
         popup._zenFlyoutAnimating = { hwnd, finish };
 
-        resize(hwnd, actual.width, 1);
-        if (inner) {
-            inner.style.translate = "0 " + (-layout.height_css) + "px";
-        }
+        place(actual.width, 1);
+        slide(0, layout.height_css);
 
         nextFrame(popup, generation, step);
     }
@@ -319,6 +427,7 @@
         }
 
         popup._zenFlyoutCloaked = hidden;
+        popup._zenFlyoutCursorY = cursorY();
         nextFrame(popup, generation, () => findWindow(popup, generation, 0));
     }
 

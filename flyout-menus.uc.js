@@ -20,8 +20,10 @@
 //      (a DWM thumbnail, the same thing taskbar previews use). Windows draws
 //      the copy itself, so Firefox renders nothing during the roll. The
 //      stand-in grows each frame and shows the matching slice of the menu.
-//   4. When the roll ends, the real menu is uncloaked in exactly the same spot
-//      and the stand-in is removed.
+//   4. The stand-in stays up while the menu is open, following the real menu's
+//      size, and the real menu stays hidden underneath (clicks pass through to
+//      it). When the menu closes, the stand-in is removed and the real menu is
+//      put back to normal once Firefox has hidden it.
 (function () {
     // Settings
     let duration = 250;

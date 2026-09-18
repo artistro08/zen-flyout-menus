@@ -8,20 +8,18 @@
 // the Mica backdrop is drawn from that window's bounds, so this talks to Win32
 // through js-ctypes:
 //   1. popupshowing: the menu's window already exists but is hidden. It is
-//      cloaked (DWMWA_CLOAK) so the compositor never shows it empty. On a cold
-//      open, when the window is not known yet, every hidden popup window is
-//      cloaked and the others are released one frame later.
-//   2. chrome.css sets appearance: none on menus so Firefox never applies the
-//      Mica backdrop itself. The backdrop and rounded corners are applied here
-//      while the window is still cloaked.
-//   3. The window stays cloaked until its contents have painted once. Then it
-//      is shrunk to 1px, uncloaked, and grown back to full height frame by
-//      frame (SetWindowPos) while the contents translate down.
+//      cloaked (DWMWA_CLOAK) so the compositor never shows it half-painted. On
+//      a cold open, when the window is not known yet, every hidden popup window
+//      is cloaked and the others are released once the right one is found.
+//   2. The script waits until Firefox has shown, sized and painted the window
+//      (still cloaked). Firefox applies the Mica backdrop itself, as in stock Zen.
+//   3. The window is shrunk to 1px, uncloaked, and grown back to full height
+//      frame by frame (SetWindowPos with SWP_NOMOVE, so Firefox keeps full
+//      control of where the menu goes) while the contents translate down.
 (function () {
     // Settings
-    let duration    = 250;
-    let reduced     = matchMedia("(prefers-reduced-motion)").matches;
-    let mica_popups = matchMedia("(-moz-windows-mica-popups)").matches;
+    let duration = 250;
+    let reduced  = matchMedia("(prefers-reduced-motion)").matches;
 
     if (reduced || navigator.platform !== "Win32") {
         return;
@@ -42,14 +40,11 @@
     let SetWindowPos          = user32.declare("SetWindowPos", ctypes.winapi_abi, ctypes.int32_t, HWND, HWND, ctypes.int32_t, ctypes.int32_t, ctypes.int32_t, ctypes.int32_t, ctypes.uint32_t);
     let DwmSetWindowAttribute = dwmapi.declare("DwmSetWindowAttribute", ctypes.winapi_abi, ctypes.int32_t, HWND, ctypes.uint32_t, ctypes.voidptr_t, ctypes.uint32_t);
 
-    let GW_OWNER                       = 4;
-    let DWMWA_CLOAK                    = 13;
-    let DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    let DWMWA_SYSTEMBACKDROP_TYPE      = 38;
-    let DWMWCP_ROUND                   = 2;
-    let DWMSBT_TRANSIENTWINDOW         = 4;
-    let POPUP_CLASS                    = "MozillaDropShadowWindowClass";
-    let SWP_RESIZE_ONLY                = 0x0004 | 0x0010 | 0x0100 | 0x0200 | 0x0400; // NOZORDER | NOACTIVATE | NOCOPYBITS | NOOWNERZORDER | NOSENDCHANGING
+    let GW_OWNER        = 4;
+    let DWMWA_CLOAK     = 13;
+    let POPUP_CLASS     = "MozillaDropShadowWindowClass";
+    let SWP_RESIZE_ONLY = 0x0002 | 0x0004 | 0x0010 | 0x0100 | 0x0200 | 0x0400; // NOMOVE | NOZORDER | NOACTIVATE | NOCOPYBITS | NOOWNERZORDER | NOSENDCHANGING
+    let MAX_WAIT_FRAMES = 12;
 
     // Elements
     let root      = document.documentElement;
@@ -68,23 +63,23 @@
         return String(ctypes.cast(hwnd, ctypes.uintptr_t).value);
     }
 
-    function dwmInt(hwnd, attribute, value) {
-        let boxed = ctypes.int32_t(value);
-        DwmSetWindowAttribute(hwnd, attribute, boxed.address(), 4);
-    }
-
     function cloak(hwnd, on) {
-        dwmInt(hwnd, DWMWA_CLOAK, on ? 1 : 0);
+        let boxed = ctypes.int32_t(on ? 1 : 0);
+        DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, boxed.address(), 4);
     }
 
     function isOurPopupWindow(hwnd) {
         return IsWindow(hwnd) && keyOf(GetWindow(hwnd, GW_OWNER)) === main_key;
     }
 
-    function matchesRect(hwnd, rect, dpr) {
+    function windowSize(hwnd) {
         let r = RECT();
         GetWindowRect(hwnd, r.address());
-        return Math.abs(r.left - Math.round(rect.left * dpr)) <= 2 && Math.abs(r.top - Math.round(rect.top * dpr)) <= 2;
+        return { left: r.left, top: r.top, width: r.right - r.left, height: r.bottom - r.top };
+    }
+
+    function resize(hwnd, width, height) {
+        SetWindowPos(hwnd, null, 0, 0, width, Math.max(1, height), SWP_RESIZE_ONLY);
     }
 
     function popupWindows(test) {
@@ -100,6 +95,22 @@
         return found;
     }
 
+    // Menu Helpers
+    function isOpen(popup) {
+        return popup.state === "open" || popup.state === "showing";
+    }
+
+    // The menu's size from layout, which is always current, in device pixels
+    function layoutSize(popup) {
+        let box = popup.getBoundingClientRect();
+        let dpr = window.devicePixelRatio;
+        return { width: Math.round(box.width * dpr), height: Math.round(box.height * dpr), height_css: box.height };
+    }
+
+    function contentOf(popup) {
+        return popup.shadowRoot && popup.shadowRoot.querySelector("[part~=content]");
+    }
+
     // Release every window cloaked on popupshowing except the menu's own
     function releaseOthers(popup, keep) {
         let keep_key = keep ? keyOf(keep) : null;
@@ -111,8 +122,17 @@
         popup._zenFlyoutCloaked = null;
     }
 
-    // Run once the menu's contents have been painted, with a fallback if no paint event comes
-    function afterPaint(callback) {
+    // Run on the next frame, but only if this open of the menu is still current
+    function nextFrame(popup, generation, callback) {
+        popup._zenFlyoutFrame = requestAnimationFrame(now => {
+            if (popup._zenFlyoutGeneration === generation) {
+                callback(now);
+            }
+        });
+    }
+
+    // Run once the menu's contents have painted, with a fallback if no paint event comes
+    function afterPaint(popup, generation, callback) {
         let done     = false;
         let run      = () => {
             if (done) {
@@ -120,7 +140,7 @@
             }
             done = true;
             window.removeEventListener("MozAfterPaint", on_paint);
-            requestAnimationFrame(callback);
+            nextFrame(popup, generation, callback);
         };
         let on_paint = () => run();
 
@@ -128,32 +148,31 @@
         setTimeout(run, 120);
     }
 
-    // Roll The Menu Out
-    function rollOut(popup) {
-        let dpr = window.devicePixelRatio;
-
-        // Force layout so the popup window is positioned at its final spot
-        popup.getBoundingClientRect();
-
-        if (popup.state !== "open" && popup.state !== "showing") {
+    // Find The Menu's Window
+    // Wait until Firefox has shown the window and given it the menu's current size.
+    function findWindow(popup, generation, tries) {
+        if (!isOpen(popup)) {
             releaseOthers(popup, null);
             return;
         }
 
-        let rect = popup.getOuterScreenRect();
+        let want = layoutSize(popup);
+        let hwnd = null;
 
-        // On a cold start the popup can take a frame or two to get its size
-        if (!(rect.height > 0)) {
-            popup._zenFlyoutTries = (popup._zenFlyoutTries || 0) + 1;
-            if (popup._zenFlyoutTries < 10) {
-                popup._zenFlyoutFrame = requestAnimationFrame(() => rollOut(popup));
-                return;
-            }
+        if (want.height > 0) {
+            hwnd = (popup._zenFlyoutCloaked || []).find(h => {
+                if (!IsWindow(h) || !IsWindowVisible(h)) {
+                    return false;
+                }
+                let size = windowSize(h);
+                return Math.abs(size.width - want.width) <= 2 && Math.abs(size.height - want.height) <= 2;
+            });
         }
-        popup._zenFlyoutTries = 0;
 
-        let cached = windows.get(popup);
-        let hwnd   = cached && isOurPopupWindow(cached) && matchesRect(cached, rect, dpr) ? cached : popupWindows(h => matchesRect(h, rect, dpr))[0];
+        if (!hwnd && tries < MAX_WAIT_FRAMES) {
+            nextFrame(popup, generation, () => findWindow(popup, generation, tries + 1));
+            return;
+        }
 
         releaseOthers(popup, hwnd);
 
@@ -162,29 +181,28 @@
         }
 
         windows.set(popup, hwnd);
-        cloak(hwnd, true);
+        afterPaint(popup, generation, () => rollOut(popup, generation, hwnd));
+    }
 
-        if (mica_popups) {
-            dwmInt(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_TRANSIENTWINDOW);
-            dwmInt(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+    // Roll The Menu Out
+    function rollOut(popup, generation, hwnd) {
+        if (!isOpen(popup)) {
+            cloak(hwnd, false);
+            return;
         }
 
-        let bounds = RECT();
-        GetWindowRect(hwnd, bounds.address());
-
-        let x          = bounds.left;
-        let y          = bounds.top;
-        let width      = bounds.right - bounds.left;
-        let height     = bounds.bottom - bounds.top;
-        let height_css = rect.height;
-        let inner      = popup.shadowRoot && popup.shadowRoot.querySelector("[part~=content]");
-        let start      = null;
-        let shown_h    = 0;
-        let revealed   = false;
-
-        function resize(h) {
-            SetWindowPos(hwnd, null, x, y, width, Math.max(1, h), SWP_RESIZE_ONLY);
-        }
+        // Firefox's exact window size, and how it lines up with layout. Only rounding
+        // (a pixel or two) counts; a bigger gap means the menu grew after the window
+        // was sized, and layout is the size to trust.
+        let actual   = windowSize(hwnd);
+        let layout   = layoutSize(popup);
+        let offset_w = Math.abs(actual.width - layout.width) <= 2 ? actual.width - layout.width : 0;
+        let offset_h = Math.abs(actual.height - layout.height) <= 2 ? actual.height - layout.height : 0;
+        let inner    = contentOf(popup);
+        let start    = null;
+        let shown_h  = 0;
+        let revealed = false;
+        let last     = { width: actual.width, height: actual.height };
 
         function reveal() {
             if (!revealed) {
@@ -193,8 +211,48 @@
             }
         }
 
+        // Always the current size, so menus that change size while opening are never cut off
+        function target() {
+            let now = layoutSize(popup);
+            return { width: now.width + offset_w, height: now.height + offset_h, height_css: now.height_css };
+        }
+
+        // A closed menu has no layout size, so fall back to the last size seen while open
+        function finish() {
+            let full = isOpen(popup) ? target() : last;
+            resize(hwnd, full.width, full.height);
+            reveal();
+            if (inner) {
+                inner.style.translate = "";
+            }
+            popup._zenFlyoutAnimating = null;
+
+            if (isOpen(popup)) {
+                nextFrame(popup, generation, () => settle(30));
+            }
+        }
+
+        // Menus can keep changing size right after opening (items and icons filled in
+        // late), so keep the window matched to layout for a moment after the roll
+        function settle(frames_left) {
+            if (!isOpen(popup) || !IsWindow(hwnd)) {
+                return;
+            }
+
+            let full = target();
+            let now  = windowSize(hwnd);
+
+            if (Math.abs(now.width - full.width) > 1 || Math.abs(now.height - full.height) > 1) {
+                resize(hwnd, full.width, full.height);
+            }
+
+            if (frames_left > 0) {
+                nextFrame(popup, generation, () => settle(frames_left - 1));
+            }
+        }
+
         function step(now) {
-            if (popup.state !== "open" && popup.state !== "showing") {
+            if (!isOpen(popup)) {
                 return;
             }
 
@@ -202,50 +260,43 @@
                 start = now;
             }
 
-            let progress = Math.min((now - start) / duration, 1);
-            let eased    = ease(progress);
-            let h        = Math.round(height * eased);
-
-            // Uncloak one frame after the window first has height, once that size has painted
-            if (shown_h > 1) {
+            // Uncloak at the size that has already painted, and hold it for this frame.
+            // Growing in the same frame would show an unpainted strip at the bottom edge.
+            if (!revealed && shown_h > 1) {
                 reveal();
-            }
-
-            resize(h);
-            shown_h = h;
-
-            if (inner) {
-                inner.style.translate = "0 " + ((eased - 1) * height_css) + "px";
-            }
-
-            if (progress < 1) {
-                popup._zenFlyoutFrame = requestAnimationFrame(step);
-            } else {
-                popup._zenFlyoutFrame = requestAnimationFrame(() => {
-                    popup._zenFlyoutFrame = null;
-                    resize(height);
-                    reveal();
-                    if (inner) {
-                        inner.style.translate = "";
-                    }
-                });
-            }
-        }
-
-        // Let the contents paint once at full size (still cloaked), then roll
-        afterPaint(() => {
-            if (popup.state !== "open" && popup.state !== "showing") {
+                nextFrame(popup, generation, step);
                 return;
             }
 
-            resize(1);
+            let progress = Math.min((now - start) / duration, 1);
+            let eased    = ease(progress);
+            let full     = target();
+            let h        = Math.round(full.height * eased);
+
+            last = full;
+
+            resize(hwnd, full.width, h);
+            shown_h = h;
 
             if (inner) {
-                inner.style.translate = "0 " + (-height_css) + "px";
+                inner.style.translate = "0 " + ((eased - 1) * full.height_css) + "px";
             }
 
-            popup._zenFlyoutFrame = requestAnimationFrame(step);
-        });
+            if (progress < 1) {
+                nextFrame(popup, generation, step);
+            } else {
+                nextFrame(popup, generation, finish);
+            }
+        }
+
+        popup._zenFlyoutAnimating = { hwnd, finish };
+
+        resize(hwnd, actual.width, 1);
+        if (inner) {
+            inner.style.translate = "0 " + (-layout.height_css) + "px";
+        }
+
+        nextFrame(popup, generation, step);
     }
 
     // Hide The Menu Window Before It Shows
@@ -255,8 +306,11 @@
             return;
         }
 
+        let generation = (popup._zenFlyoutGeneration || 0) + 1;
+        popup._zenFlyoutGeneration = generation;
+
         // The window is created before this event. Use the one seen last time,
-        // else cloak every hidden popup window and sort it out next frame.
+        // else cloak every hidden popup window and sort it out once it shows.
         let cached = windows.get(popup);
         let hidden = cached && isOurPopupWindow(cached) ? [cached] : popupWindows(h => !IsWindowVisible(h));
 
@@ -265,7 +319,7 @@
         }
 
         popup._zenFlyoutCloaked = hidden;
-        popup._zenFlyoutFrame   = requestAnimationFrame(() => rollOut(popup));
+        nextFrame(popup, generation, () => findWindow(popup, generation, 0));
     }
 
     // Put The Menu Window Back To Normal On Close
@@ -275,12 +329,20 @@
             return;
         }
 
+        // Any frame still queued for this open is now stale
+        popup._zenFlyoutGeneration = (popup._zenFlyoutGeneration || 0) + 1;
+
         if (popup._zenFlyoutFrame) {
             cancelAnimationFrame(popup._zenFlyoutFrame);
             popup._zenFlyoutFrame = null;
         }
 
-        let inner = popup.shadowRoot && popup.shadowRoot.querySelector("[part~=content]");
+        // Closed mid-roll: give the window back its full size so Firefox's idea of it stays right
+        if (popup._zenFlyoutAnimating) {
+            popup._zenFlyoutAnimating.finish();
+        }
+
+        let inner = contentOf(popup);
         if (inner) {
             inner.style.translate = "";
         }
@@ -294,13 +356,11 @@
     }
 
     // Bind to Event Listeners
-    root.setAttribute("zen-flyout-ready", "");
     root.addEventListener("popupshowing", onShowing, true);
     root.addEventListener("popuphidden", onHidden, true);
 
     // Clean up when Sine disables or uninstalls the mod
     window.addUnloadListener?.(() => {
-        root.removeAttribute("zen-flyout-ready");
         root.removeEventListener("popupshowing", onShowing, true);
         root.removeEventListener("popuphidden", onHidden, true);
         user32.close();

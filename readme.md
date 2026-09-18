@@ -43,7 +43,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "enabled": true
 }
 ```
@@ -52,9 +52,10 @@ artistro08/zen-flyout-menus
 
 ## How It Works
 
-1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so the compositor never shows it empty. On a cold open, when the window isn't known yet, every hidden popup window is cloaked and the others are released one frame later.
-2. `chrome.css` sets `appearance: none` on menus so Firefox does not apply the Mica backdrop itself. The script applies the backdrop and rounded corners while the window is still cloaked.
-3. The window stays cloaked until its contents have painted once. Then it is shrunk to 1px, uncloaked, and grown back to full height frame by frame (`SetWindowPos`) while the contents translate down.
+1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so the compositor never shows it half-painted. On a cold open, when the window isn't known yet, every hidden popup window is cloaked and the others are released once the right one is found.
+2. The script waits until Firefox has shown, sized and painted the window, still cloaked. Firefox applies the Mica backdrop itself, exactly like stock Zen.
+3. The window is shrunk to 1px, uncloaked at a size that has already painted, and grown back to full height frame by frame (`SetWindowPos` with `SWP_NOMOVE`, so Firefox keeps full control of where the menu goes) while the contents translate down.
+4. For half a second after the roll the window is kept matched to the menu's layout size, because some menus fill in items or icons late.
 
 > Why resize instead of clip? Windows draws the Mica backdrop from the window's full bounds and ignores a clip region, so a clipped window shows a full-size empty backdrop with the contents rolling inside it.
 

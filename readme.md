@@ -6,8 +6,8 @@ Makes right-click menus and submenus in Zen pop in like Windows 11 flyouts: a qu
 
 Zen's context menus appear instantly. This mod animates the menu content on open:
 
-- Top-level menus fade in and slide down from the click point.
-- Submenus fade in and slide in from the left.
+- Top-level menus slide down from the click point. Submenus slide in from the left.
+- The whole menu window moves, Mica backdrop included, and the contents fade in.
 - Animation is 200ms and respects your OS "reduce motion" setting.
 
 ## Installing with Sine
@@ -26,9 +26,8 @@ artistro08/zen-flyout-menus
 
 3. Click install. Sine downloads `chrome.css` and `flyout-menus.uc.js` and enables the mod. Updates come through Sine when this repo changes.
 
-> The script is required. Firefox keeps a menu's layout alive after it closes, so a CSS-only animation plays once and never again. The script tags each menu while it is open so the animation replays every time. Restart Zen once after installing so the script loads.
+> The script is required. CSS cannot move a menu's window, and the Mica backdrop lives on that window, so the script slides the window itself. Restart Zen once after installing so the script loads.
 
-> With Mica popups on (Zen's default), the blurred backdrop appears instantly and only the menu content animates. Set `widget.windows.mica.popups` to `0` in `about:config` if you want the whole menu to move together, at the cost of the Mica look.
 
 
 ## Installing without Sine
@@ -54,13 +53,19 @@ artistro08/zen-flyout-menus
 
 ## Tweaking
 
-Edit the tokens at the top of `chrome.css`:
+Slide distance and speed live at the top of `flyout-menus.uc.js`:
+
+```js
+let duration = 200;
+let offset   = 10;
+```
+
+Fade timing lives at the top of `chrome.css`:
 
 ```css
 :root {
   --flyout-duration: 200ms;
   --flyout-easing: cubic-bezier(0.1, 0.9, 0.2, 1);
-  --flyout-offset: 10px;
 }
 ```
 

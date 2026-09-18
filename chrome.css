@@ -2,32 +2,8 @@
  * WinUI-style flyout animation for right-click menus and submenus.
  * Author: Devin Green (Artistro08)
  *
- * flyout-menus.uc.js slides the whole menu window into place (that is the
- * only way to move the Mica backdrop, which lives on the OS window) and adds
- * [zen-flyout] to the menu while it is open. This file fades the contents in
- * to match. Mod stylesheets load through the stylesheet service, and from
- * there ::part() never matches, so the animation targets the menupopup itself.
+ * All of the motion lives in flyout-menus.uc.js. CSS cannot move a menu's OS
+ * window, and the Mica backdrop lives on that window, so there is nothing for
+ * a stylesheet to animate here. This file is kept so the mod stays a valid
+ * Sine/Zen mod.
  */
-
-/* Tokens */
-:root {
-  --flyout-duration: 200ms;
-  --flyout-easing: cubic-bezier(0.1, 0.9, 0.2, 1);
-}
-
-/* Keyframes */
-@keyframes zen-flyout-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Menus */
-@media not (prefers-reduced-motion) {
-  menupopup[zen-flyout]:not(.animatable-menupopup) {
-    animation: zen-flyout-fade var(--flyout-duration) var(--flyout-easing) both !important;
-  }
-}

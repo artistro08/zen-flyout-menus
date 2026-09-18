@@ -2,8 +2,11 @@
  * WinUI-style flyout animation for right-click menus and submenus.
  * Author: Devin Green (Artistro08)
  *
- * Note: Zen disables popup animations while Mica popups are on.
- * Set widget.windows.mica.popups to 0 in about:config if menus don't animate.
+ * flyout-menus.uc.js adds [zen-flyout] to a menu while it is open. The
+ * animation is keyed off that attribute so it replays on every open.
+ * Zen blocks popup animations while Mica popups are on, so the rules below
+ * use !important plus a specificity bump (:not(#\#)) to win anyway. With Mica
+ * on, the blurred backdrop pops in instantly and only the menu content animates.
  */
 
 /* Tokens */
@@ -39,12 +42,12 @@
 /* Menus */
 @media not (prefers-reduced-motion) {
   /* Top-level menus slide down from the click point */
-  menupopup:not(.animatable-menupopup)::part(content) {
-    animation: zen-flyout-down var(--flyout-duration) var(--flyout-easing) both;
+  menupopup[zen-flyout]:not(#\#):not(.animatable-menupopup)::part(content) {
+    animation: zen-flyout-down var(--flyout-duration) var(--flyout-easing) both !important;
   }
 
   /* Submenus slide in from the left */
-  menupopup menupopup:not(.animatable-menupopup)::part(content) {
-    animation-name: zen-flyout-right;
+  menupopup menupopup[zen-flyout]:not(#\#):not(.animatable-menupopup)::part(content) {
+    animation-name: zen-flyout-right !important;
   }
 }

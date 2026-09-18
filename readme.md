@@ -24,9 +24,12 @@ Zen's context menus appear instantly. This mod animates the menu content on open
 artistro08/zen-flyout-menus
 ```
 
-3. Click install. Sine downloads `chrome.css` and enables the mod. Updates come through Sine when this repo changes.
+3. Click install. Sine downloads `chrome.css` and `flyout-menus.uc.js` and enables the mod. Updates come through Sine when this repo changes.
 
-> If menus still appear instantly, open `about:config`, set `widget.windows.mica.popups` to `0`, and restart. Zen turns off popup animations while Mica is drawn behind menus because the Mica backdrop can't move with the menu.
+> The script is required. Firefox keeps a menu's layout alive after it closes, so a CSS-only animation plays once and never again. The script tags each menu while it is open so the animation replays every time.
+
+> With Mica popups on (Zen's default), the blurred backdrop appears instantly and only the menu content animates. Set `widget.windows.mica.popups` to `0` in `about:config` if you want the whole menu to move together, at the cost of the Mica look.
+
 
 ## Installing without Sine
 

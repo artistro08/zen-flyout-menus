@@ -8,9 +8,9 @@ Zen's context menus pop in fully formed, and with Mica on, the empty backdrop sh
 
 - The menu's top edge stays put, the menu grows downward, and the contents slide down with its bottom edge. Measured frame by frame from the Edge context menu: 250ms, `cubic-bezier(0, 0, 0, 1)`.
 - Menus that open upward because there's no room below the cursor roll the other way: the bottom edge stays at the cursor, the menu grows upward, and the contents slide up with its top edge.
-- The whole menu rolls out, Mica backdrop included, not just the contents. The script resizes the menu's actual window each frame.
-- No blank flash. The window is hidden from the compositor until its contents are painted.
-- Respects your OS "reduce motion" setting (menus then behave like stock Zen).
+- The whole menu rolls out, Mica backdrop included, not just the contents.
+- No blank flash and no empty strip at the growing edge, even on large menus.
+- Respects the Windows "reduce motion" setting.
 
 ## Installing with Sine
 
@@ -28,7 +28,7 @@ artistro08/zen-flyout-menus
 
 3. Click install, then restart Zen once so the script loads. Updates come through Sine when this repo changes.
 
-> The script is required. CSS cannot resize or hide a menu's window, and the Mica backdrop is drawn from that window's bounds. The script does that part through js-ctypes and Win32 (`SetWindowPos`, `DwmSetWindowAttribute`).
+> The script is required. CSS can't hide, resize or copy a menu's window, and the Mica backdrop belongs to that window. The script does that part through js-ctypes and the Windows compositor (DWM).
 
 ## Installing without Sine
 
@@ -44,7 +44,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "enabled": true
 }
 ```
@@ -62,8 +62,9 @@ artistro08/zen-flyout-menus
 
 ## Known Limits
 
-- Windows only. On other platforms the script does nothing.
+- Windows 11 only. On other platforms the script does nothing, and if the Windows APIs it needs aren't available, menus stay stock.
 - A menu's very first open in a session starts a few frames later than later opens, while it finishes filling in.
+- Turning on "reduce motion" in Windows turns the animation off.
 
 ## Tweaking
 

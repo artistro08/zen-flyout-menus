@@ -44,7 +44,7 @@ artistro08/zen-flyout-menus
   "style": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/chrome.css",
   "readme": "https://raw.githubusercontent.com/artistro08/zen-flyout-menus/main/readme.md",
   "author": "Artistro08",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "enabled": true
 }
 ```
@@ -53,13 +53,12 @@ artistro08/zen-flyout-menus
 
 ## How It Works
 
-1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so the compositor never shows it half-painted. On a cold open, when the window isn't known yet, every hidden popup window is cloaked and the others are released once the right one is found.
-2. The script waits until Firefox has shown, sized and painted the window, still cloaked. Firefox applies the Mica backdrop itself, exactly like stock Zen.
-3. On a menu's first open it can still be filling in items and icons, so the script waits (still cloaked) until its size holds steady.
-4. The window is shrunk to 1px, uncloaked, and grown back to full height frame by frame with `SetWindowPos`. Firefox is never told about these changes: for the length of each call the window's message handler drops the "moved/resized" notice, so Firefox keeps painting the menu at full size and the window simply reveals more of it each frame. Downward rolls keep the top edge, upward rolls keep the bottom edge, and both end exactly where Firefox put the menu.
-5. For half a second after the roll the window is kept matched to the menu's layout size, because some menus fill in items or icons late.
+1. On `popupshowing` the menu's OS window already exists but is hidden. The script cloaks it (`DWMWA_CLOAK`) so nothing shows yet.
+2. The script waits until Firefox has shown, sized and painted the real menu at full size, still hidden.
+3. A stand-in window with the same Mica backdrop shows a live copy of the menu (a DWM thumbnail, the same thing taskbar previews use). Windows draws the copy itself, so Firefox renders nothing during the roll and there's never an empty strip. The stand-in grows each frame and shows the matching slice of the menu. It lets clicks through to the real menu, so clicking mid-roll still works.
+4. When the roll ends, the real menu is uncloaked in exactly the same spot and the stand-in is removed.
 
-> Why resize instead of clip? Windows draws the Mica backdrop from the window's full bounds and ignores a clip region, so a clipped window shows a full-size empty backdrop with the contents rolling inside it.
+> Why not just resize Firefox's menu window? Windows shows the bigger window before Firefox has drawn the new part, which leaves a blank strip at the growing edge on larger menus.
 
 ## Known Limits
 

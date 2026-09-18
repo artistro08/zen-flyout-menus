@@ -2,7 +2,26 @@
  * WinUI-style roll-out animation for right-click menus and submenus.
  * Author: Devin Green (Artistro08)
  *
- * All of the motion lives in flyout-menus.uc.js. Menus keep Zen's stock look,
- * including the Mica backdrop, so there is nothing to style here. This file is
- * kept so the mod stays a valid Sine/Zen mod.
+ * The animation lives entirely in flyout-menus.uc.js. Menus keep Zen's stock
+ * look, including the Mica backdrop. The rules here only size menu items, so
+ * they read closer to a Windows 11 flyout than Firefox's tighter default.
  */
+
+/* Tokens */
+:root {
+  --flyout-menu-font-size: 10.5pt;
+  --flyout-menu-padding: 0.5rem 1rem;
+  --flyout-menu-hover-duration: 250ms;
+}
+
+/* Menu Items */
+#mainPopupSet menuitem,
+#mainPopupSet menu {
+  font-size: var(--flyout-menu-font-size) !important;
+}
+
+menuitem,
+menu {
+  padding: var(--flyout-menu-padding) !important;
+  transition: all var(--flyout-menu-hover-duration) ease;
+}
